@@ -1,4 +1,4 @@
-#!/usr/bin/php -d open_basedir=/usr/syno/bin/ddns/:/tmp/:/var/log/
+#!/usr/bin/php
 <?php
 /*
 Attention: No empty line before this!!!! The output must start with 'good' or 'nochg' in the 1st line for an success message 
@@ -14,31 +14,14 @@ Alternative (see below commented out version): Ask Google for the IPv6, whith wh
 
 Parameters: 1=account (username, usually domain name), 2=pwd (use single quotes!) 3=hostname (incl. sub domain), 4=ip (IPv4)
 
-if the IP addresses are sent too often to Infomaniak, then you will get "abuse ..."
-DSM runs this normally once per day, but in some cases ervery few seconds
-==> Workaround: If last update of the logfile is less than ageMin_h, don't send but simply return "nochg ..." to DSM
+This script checks the current A and AAAA records for "hostname" and only sends a request if the addresses have changed.
 */
-$LOG_NAME = '/tmp/ddns.log';
-// https://stackoverflow.com/questions/1062716/php-returning-the-last-line-in-a-file
-$LOG_NAME_ESC = escapeshellarg($LOG_NAME); // for the security concious (should be everyone!)
-$ageMin_h = 2.0;
-$age_h = 9999;
-if (file_exists($LOG_NAME_ESC)) {
-  $age_h = (time() - filemtime($LOG_NAME_ESC)) / 3600;
-}
 
-$lastLogLine = `tail -n 1 $LOG_NAME_ESC`;
-// should be eg.:
-// returned result: nochg 87.175.192.182 2003:c8:72e:a000:9209:d0ff:fe05:c05f
-$fLOG = fopen($LOG_NAME_ESC, 'a+'); // open_basedir option required!
 $date = date('Y-m-d H:i:s');
 $msg = "\n$date Start $argv[0]\n";
-// echo("\n\n$date Start\n"); 
 if ($argc !== 5) {
-  echo "Error: Bad param count $argc instead of 5!\n $argv[0]  <account> '<PW>' <host> <ipv4>\n";
   $msg .= "  Error: Bad param count $argc instead of 5!\n $argv[0] <account> '<PW>' <host> <ipv4>\n";
-  fwrite($fLOG, "$msg");
-  fclose($fLOG);
+  echo $msg;
   exit("Error: Bad param count $argc instead of 5!");
 }
 $account = (string)$argv[1]; // Account name
@@ -48,18 +31,16 @@ $ip = (string)$argv[4];
 
 // check that the hostname contains '.'
 if (strpos($hostname, '.') === false) {
-  echo "Error: Badparam hostname $hostname\n";
+  // echo "Error: Badparam hostname $hostname\n";
   $msg .= "  Error: Badparam hostname $hostname\n";
-  fwrite($fLOG, "$msg");
-  fclose($fLOG);
+  echo "$msg";
   exit("Error: Badparam hostname $hostname");
 }
 
 if (!filter_var($ip, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4)) {
-  echo ("Error Badparam: 1st IP is not IPv4 in '$ip'\n");
+  // echo ("Error Badparam: 1st IP is not IPv4 in '$ip'\n");
   $msg .= "  Error Badparam: 1st IP is not IPv4 in '$ip'\n";
-  fwrite($fLOG, "$msg");
-  fclose($fLOG);
+  echo "$msg";
   exit("Error Badparam: 1st IP is not IPv4 in '$ip'");
 }
 
@@ -89,27 +70,48 @@ if (!filter_var($ipv6, FILTER_VALIDATE_IP, FILTER_FLAG_NO_PRIV_RANGE)) {
   $ipv6 = '';
 }
 
+$dnsipv6 = explode("\n", shell_exec("nslookup -type=aaaa $hostname | /bin/tail -n 4 | /bin/grep \"Address:\" | /bin/cut -d \" \" -f 2"))[0];
+$dnsipv4 = explode("\n", shell_exec("nslookup -type=a $hostname | /bin/tail -n 4 | /bin/grep \"Address:\" | /bin/cut -d \" \" -f 2"))[0];
+
+if ($ip == $dnsipv4 && ($ipv6 == '' || $ipv6 == $dnsipv6)) {
+  $msg .= "IP addresses unchanged, no need to update.\n";
+  echo "nochg $ip $ipv6\n";
+  exit;
+}
+
+$msg .= "IP changed: v4: param=$ip DNS=$dnsipv4 v6: param=$ipv6 DNS=$dnsipv6\n";
+$msg .= "preparing request(s)...\n";
+
 // https://www.infomaniak.com/de/support/faq/2357/dyndns-einrichten-eines-ddns-mit-einer-bei-infomaniak-verwalteten-domain
 // https://username:passwort@infomaniak.com/nic/update?hostname=subdomain.yourdomain.com&myip=12.34.56.78,2000:1200:3400:5600:abcd:ef01:2345:6789  
 
 $url = 'https://infomaniak.com/nic/update?hostname=' . $hostname . '&myip=';
-$unchanged = false;
-$ipparam = $ip;
-$checklog = $ip;
-if ($ipv6 != '') { // IPv4 and IPv6 available
-  $ipparam .= ',' . $ipv6;
-  $checklog .= ' ' . $ipv6;
-}
-$url .=  $ipparam;
-$msg .= "  used url: $url\n";
 
-if (str_contains($lastLogLine, $checklog)) {
-  $unchanged = true;
+$result = '';
+if($ip !== $dnsipv4) {
+  $v4url = $url . $ip;
+  $msg .= "  need to update ipv4. Used url: $v4url\n";
+  $result = updateHost($v4url, $account, $pwd) . "\n";
 }
-if (($age_h > $ageMin_h) && (!$unchanged)) {
+if($ipv6 !== $dnsipv6) {
+  $v6url = $url . $ipv6;
+  $msg .= "  need to update ipv6. Used url: $v6url\n";
+  $result = updateHost($v6url, $account, $pwd);
+}
+
+// DEBUG
+//echo $msg;
+
+echo $result; // The script output needs to start(!!) with "nochg" or "good" to avoid error messages in the synology protocol list.
+if ((strpos($result, "good") !== 0) && (strpos($result, "nochg") !== 0)) {
+  syslog(LOG_ERR, "$argv[0]: $result");
+}
+
+function updateHost($fullurl, $user, $pw)
+{
   // Send now the actual IPs to the DDNS provider:
   $req = curl_init();
-  curl_setopt($req, CURLOPT_URL, $url);
+  curl_setopt($req, CURLOPT_URL, $fullurl);
   curl_setopt($req, CURLOPT_RETURNTRANSFER, 1); // https://stackoverflow.com/questions/6516902/how-to-get-response-using-curl-in-php
   curl_setopt($req, CURLOPT_CONNECTTIMEOUT, 25);
   // without an agent you will get "badagent 0.0.0.0"
@@ -118,35 +120,24 @@ if (($age_h > $ageMin_h) && (!$unchanged)) {
   curl_setopt($req, CURLOPT_USERAGENT, $agent);
   // CURLOPT_AUTOREFERER
   curl_setopt($req, CURLOPT_HTTPAUTH, CURLAUTH_BASIC);
-  curl_setopt($req, CURLOPT_USERPWD, "$account:$pwd");
+  curl_setopt($req, CURLOPT_USERPWD, "$user:$pw");
 
   // $res = 'nochg 9.99.99.99 2003:99:99:99:99:99:99:99'; // may be used for debugging
   // $res = 'badauth test';
   $res = curl_exec($req);
   curl_close($req);
-  $msg .= "  curl_exec result: $res";
-} else {
-  $msg .= "  sending skipped as last update was only $age_h h ago to avoid 'abuse ...' message\n";
-  $msg .= "  returned result: $res";
+  return $res;
+  /*
+    https://community.synology.com/enu/forum/17/post/57640, normal responses:
+    good - Update successfully.
+    nochg - Update successfully but the IP address have not changed.
+    nohost - The hostname specified does not exist in this user account.
+    abuse - The hostname specified is blocked for update abuse, too often requisted in short period
+    notfqdn - The hostname specified is not a fully-qualified domain name.
+    badauth - Authenticate failed.
+    911 - There is a problem or scheduled maintenance on provider side
+    badagent - The user agent sent bad request(like HTTP method/parameters is not permitted)
+    badresolv - Failed to connect to because failed to resolve provider address.
+    badconn - Failed to connect to provider because connection timeout.
+  */
 }
-
-/*
-https://community.synology.com/enu/forum/17/post/57640, normal responses:
-good - Update successfully.
-nochg - Update successfully but the IP address have not changed.
-nohost - The hostname specified does not exist in this user account.
-abuse - The hostname specified is blocked for update abuse, too often requisted in short period
-notfqdn - The hostname specified is not a fully-qualified domain name.
-badauth - Authenticate failed.
-911 - There is a problem or scheduled maintenance on provider side
-badagent - The user agent sent bad request(like HTTP method/parameters is not permitted)
-badresolv - Failed to connect to because failed to resolve provider address.
-badconn - Failed to connect to provider because connection timeout.
-*/
-
-echo ("$res"); // The script output needs to start(!!) with "nochg" or "good" to avoid error messages in the synology protocol list.
-if ((strpos($res, "good") !== 0) && (strpos($res, "nochg") !== 0)) {
-  syslog(LOG_ERR, "$argv[0]: $res, see /tmp/ddns.log");
-}
-fwrite($fLOG, "$msg");
-fclose($fLOG);

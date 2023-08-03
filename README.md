@@ -11,8 +11,8 @@ With the following steps you can use a sub domain of your domain hosted at Infom
 3) Add to that configuration file `/etc.defaults/ddns_provider.conf` the lines
    ```
    [INFOMANIAK_4_6]
-   modulepath=/usr/syno/bin/ddns/infomaniak46.php
-   queryurl=https://infomaniak.com/nic/update
+           modulepath=/usr/syno/bin/ddns/infomaniak46.php
+           queryurl=https://infomaniak.com/nic/update
    ```
 4) In the control panel you can now select INFOMANIAK_4_6 from the dropdown, enter your host name (subdomain.yourdomain.com), user name (yourdomain.com) and password.
 
