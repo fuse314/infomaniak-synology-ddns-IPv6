@@ -6,15 +6,11 @@ Your internet router may support DDNS including IPv6, but it will not be a solut
 On your Synology device in the folder /usr/syno/bin/ddns/ there are scripts for some providers. If you are going to "Add" in the control panel under "External Access", "DDNS" you will find in the dropdown for "Service Providers" the entries from the file `/etc.defaults/ddns_provider.conf`.
 
 With the following steps you can use a sub domain of your domain hosted at Infomaniak to access your Synology including IPv6:
-1) Follow the instructions under [infomaniak.com FAQ 2357](https://www.infomaniak.com/de/support/faq/2357/dyndns-einrichten-eines-ddns-mit-einer-bei-infomaniak-verwalteten-domain) to setup a sub domain for the Synology on your domain.
-2) Copy the php script from this repository to `/usr/syno/bin/ddns/infomaniak46.php`. And make it executable (`chmod 755 /usr/syno/bin/ddns/infomaniak46.php`)
-3) Add to that configuration file `/etc.defaults/ddns_provider.conf` the lines
-   ```
-   [INFOMANIAK_46]
-           modulepath=/usr/syno/bin/ddns/infomaniak46.php
-           queryurl=https://infomaniak.com/nic/update
-   ```
-4) In the control panel you can now select INFOMANIAK_46 from the dropdown, enter your host name (subdomain.yourdomain.com), username and password (from the setup process at infomaniak.com).
+1. Follow the instructions under [infomaniak.com FAQ 2357](https://www.infomaniak.com/de/support/faq/2357/dyndns-einrichten-eines-ddns-mit-einer-bei-infomaniak-verwalteten-domain) to setup a sub domain for the Synology on your domain.
+2. Copy the contents of this repository into a local directory
+3. Connect to your DSM using SSH with your admin user and sudo as root `sudo -i`.
+4. Set the `setup.sh` script to be executable `chmod +x setup.sh` and execute the script `./setup.sh`
+5. In the control panel you can now select INFOMANIAK_46 from the dropdown, enter your host name (subdomain.yourdomain.com), username and password (from the setup process at infomaniak.com).
 
 DSM is executing the DDNS update normally once every 24 hours. The update request is only sent, if the IP address (ipv4 or ipv6 differs from the current A or AAAA DNS record).
 
