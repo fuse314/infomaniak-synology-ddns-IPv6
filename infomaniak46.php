@@ -98,11 +98,16 @@ function initCurl($url)
  */
 function getContentV6($url)
 {
-  $req = initCurl($url);
-  curl_setopt($req, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
-  $result = curl_exec($req);
-  curl_close($req);
-  return $result;
+  try {
+    $req = initCurl($url);
+    curl_setopt($req, CURLOPT_IPRESOLVE, CURL_IPRESOLVE_V6);
+    $result = curl_exec($req);
+    curl_close($req);
+    return $result;
+  }
+  catch(Exception $ex) {
+    return '';
+  }
 }
 
 /*
@@ -153,10 +158,15 @@ function updateHost($url, $user, $pw)
 function getDnsRecord($hostname, $v4)
 {
   $result = dns_get_record($hostname, $v4 ? DNS_A : DNS_AAAA);
-  if ($result !== false && $result !== null && isset($result[0])) {
-    $prop = $v4 ? "ip" : "ipv6";
-    return $result[0][$prop];
+  if ($result !== false) {
+    if (isset($result[0])) {
+      $prop = $v4 ? "ip" : "ipv6";
+      return $result[0][$prop];
+    } else {
+      return '';
+    }
   } else {
     return '';
   }
 }
+
