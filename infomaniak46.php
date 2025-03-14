@@ -158,15 +158,10 @@ function updateHost($url, $user, $pw)
 function getDnsRecord($hostname, $v4)
 {
   $result = dns_get_record($hostname, $v4 ? DNS_A : DNS_AAAA);
-  if ($result !== false) {
-    if (isset($result[0])) {
-      $prop = $v4 ? "ip" : "ipv6";
-      return $result[0][$prop];
-    } else {
-      return '';
-    }
+  if ($result !== false && $result !== null && isset($result[0])) {
+    $prop = $v4 ? "ip" : "ipv6";
+    return $result[0][$prop];
   } else {
     return '';
   }
 }
-
